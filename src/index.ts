@@ -25,19 +25,33 @@ const server = new Server(
  */
 async function runrunitFetch(endpoint: string, options: RequestInit = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
-  const headers = {
+
+  const headers: Record<string, string> = {
     "App-Key": env.RUNRUNIT_APP_KEY,
     "User-Token": env.RUNRUNIT_USER_TOKEN,
-    "Content-Type": "application/json",
-    ...options.headers,
+    Accept: "application/json",
   };
 
-  const response = await fetch(url, { ...options, headers });
+  if (
+    options.body ||
+    options.method === "POST" ||
+    options.method === "PATCH" ||
+    options.method === "PUT"
+  ) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers: { ...headers, ...options.headers },
+  });
 
   if (!response.ok) {
     const errorText = await response.text();
+    const appKeyLen = env.RUNRUNIT_APP_KEY?.length ?? 0;
+    const userTokenLen = env.RUNRUNIT_USER_TOKEN?.length ?? 0;
     throw new Error(
-      `Runrun.it API error: ${response.status} ${response.statusText} - ${errorText}`,
+      `Runrun.it API error: ${response.status} ${response.statusText} (K:${appKeyLen}, T:${userTokenLen}) - ${errorText}`,
     );
   }
 
@@ -90,8 +104,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: "get_me",
-        description: "Get information about the authenticated user",
+        name: "get_config_status",
+        description:
+          "Check if environment variables are correctly loaded (MASKED)",
         inputSchema: {
           type: "object",
           properties: {},
@@ -138,6 +153,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
+      case "get_config_status": {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  appKeyPresent: !!env.RUNRUNIT_APP_KEY,
+                  appKeyLength: env.RUNRUNIT_APP_KEY?.length,
+                  userTokenPresent: !!env.RUNRUNIT_USER_TOKEN,
+                  userTokenLength: env.RUNRUNIT_USER_TOKEN?.length,
+                  nodeVersion: process.version,
+                  cwd: process.cwd(),
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -162,6 +199,12 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("Runrun.it MCP Server running on stdio");
+  console.error(
+    `Config: AppKey: ${env.RUNRUNIT_APP_KEY?.substring(0, 3)}...${env.RUNRUNIT_APP_KEY?.substring(env.RUNRUNIT_APP_KEY.length - 3)}`,
+  );
+  console.error(
+    `Config: UserToken: ${env.RUNRUNIT_USER_TOKEN?.substring(0, 3)}...${env.RUNRUNIT_USER_TOKEN?.substring(env.RUNRUNIT_USER_TOKEN.length - 3)}`,
+  );
 }
 
 main().catch((error) => {

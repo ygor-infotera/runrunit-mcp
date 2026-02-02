@@ -1,6 +1,7 @@
 # Runrun.it MCP Server
 
 A Model Context Protocol (MCP) server for interacting with the Runrun.it API.
+https://runrun.it/api/documentation
 
 ## Features
 
