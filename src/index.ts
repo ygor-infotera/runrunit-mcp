@@ -175,7 +175,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "get_task": {
         const id = args?.["id"] as number;
         if (!id) throw new Error("Task ID is required");
-        const task = await runrunitFetch(`/tasks/${id}`);
+
+        // Fetch task info and description in parallel
+        const [task, descData] = await Promise.all([
+          runrunitFetch(`/tasks/${id}`),
+          runrunitFetch(`/tasks/${id}/description`).catch((err) => {
+            console.error(`Failed to fetch description for task ${id}:`, err);
+            return { description: "Could not fetch description" };
+          }),
+        ]);
+
+        // Merge description into task object
+        if (descData && descData.description) {
+          task.description = descData.description;
+        }
+
         return {
           content: [
             { type: "text", text: JSON.stringify(simplifyTask(task), null, 2) },
