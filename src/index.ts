@@ -59,6 +59,29 @@ async function runrunitFetch(endpoint: string, options: RequestInit = {}) {
 }
 
 /**
+ * Simplifies a task object for better model readability
+ */
+function simplifyTask(task: any) {
+  return {
+    id: task.id,
+    title: task.title,
+    description: task.description || "No description",
+    status: task.task_status_name || task.board_stage_name || task.state,
+    responsible: task.responsible_name,
+    project: task.project_name || "No project",
+    team: task.team_name,
+    overdue: task.overdue === "on_schedule" ? "On schedule" : task.overdue,
+    created_at: task.created_at,
+    estimated_delivery: task.estimated_delivery_date,
+    time_worked: `${(task.time_worked / 3600).toFixed(2)}h`,
+    time_total: `${(task.time_total / 3600).toFixed(2)}h`,
+    priority: task.priority,
+    is_closed: task.is_closed,
+    link: `https://runrun.it/pt-BR/tasks/${task.id}`,
+  };
+}
+
+/**
  * List available tools
  */
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -66,7 +89,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "get_task",
-        description: "Get detailed information about a specific task by its ID",
+        description:
+          "Get core information about a specific task (Title and Description). Use this for general context about what needs to be done.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: {
+              type: "number",
+              description: "The ID of the task to retrieve",
+            },
+          },
+          required: ["id"],
+        },
+      },
+      {
+        name: "get_task_details",
+        description:
+          "Get the FULL, raw API response for a task. WARNING: This is very large. Only use if you specifically need technical fields, custom field values, or deep task metadata not available in get_task.",
         inputSchema: {
           type: "object",
           properties: {
@@ -80,7 +119,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "list_tasks",
-        description: "List tasks with optional filters",
+        description:
+          "List tasks with optional filters. Returns simplified task objects. Use this to find tasks by user, project, or status.",
         inputSchema: {
           type: "object",
           properties: {
@@ -112,6 +152,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {},
         },
       },
+      {
+        name: "get_me",
+        description: "Get information about the current authenticated user",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
     ],
   };
 });
@@ -129,6 +177,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (!id) throw new Error("Task ID is required");
         const task = await runrunitFetch(`/tasks/${id}`);
         return {
+          content: [
+            { type: "text", text: JSON.stringify(simplifyTask(task), null, 2) },
+          ],
+        };
+      }
+
+      case "get_task_details": {
+        const id = args?.["id"] as number;
+        if (!id) throw new Error("Task ID is required");
+        const task = await runrunitFetch(`/tasks/${id}`);
+        return {
           content: [{ type: "text", text: JSON.stringify(task, null, 2) }],
         };
       }
@@ -140,9 +199,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             if (value !== undefined) params.append(key, String(value));
           });
         }
-        const tasks = await runrunitFetch(`/tasks?${params.toString()}`);
+        const tasks =
+          (await runrunitFetch(`/tasks?${params.toString()}`)) || [];
+        const taskList = Array.isArray(tasks) ? tasks : [];
         return {
-          content: [{ type: "text", text: JSON.stringify(tasks, null, 2) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(taskList.map(simplifyTask), null, 2),
+            },
+          ],
         };
       }
 
